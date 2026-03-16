@@ -1,13 +1,6 @@
-from fastapi import APIRouter, FastAPI
+from fastapi import FastAPI
+from app.api.main import api_router
 
 app = FastAPI()
 
-router = APIRouter()
-
-
-@router.get("/")
-def ping():
-    return {"message": "Service is alive"}
-
-
-app.include_router(router)
+app.include_router(api_router)
