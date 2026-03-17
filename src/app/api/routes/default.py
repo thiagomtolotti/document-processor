@@ -24,7 +24,7 @@ def get_arquivo(id: UUID, response: Response):
 
 
 @router.post("/arquivo")
-def upload_arquivo(file: UploadFile, response: Response):
-    services.file.upload(file)
+async def upload_arquivo(file: UploadFile, response: Response):
+    await services.file.upload(file)
 
     return {"message": "O upload foi bem sucedido"}
