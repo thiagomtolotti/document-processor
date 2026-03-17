@@ -1,11 +1,9 @@
 import shutil
 
 from uuid import UUID, uuid4
-from pathlib import Path
-
 from fastapi.datastructures import UploadFile
 
-STATIC_PATH = Path("./src/app/static")
+from app.constants import STATIC_PATH
 
 
 def get(id: UUID) -> None:
