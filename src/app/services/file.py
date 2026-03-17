@@ -1,10 +1,13 @@
-from pathlib import Path
 import shutil
+import io
 
-from uuid import UUID, uuid4
+from pathlib import Path
 from fastapi.datastructures import UploadFile
 from fastapi.exceptions import HTTPException
 from pypdf import PdfReader, PdfWriter
+
+from typing import BinaryIO, Generator
+from uuid import UUID, uuid4
 
 from app.constants import CHUNK_SIZE, STATIC_PATH
 
@@ -35,65 +38,65 @@ def get(id: UUID) -> str:
             )
 
 
-async def upload(file: UploadFile) -> UUID:
-    reader = PdfReader(file.file)
-    total_pages = len(reader.pages)
+async def upload(data: UploadFile) -> UUID:
+    if not data.filename:
+        raise HTTPException(status_code=400, detail="Arquivo sem nome.")
 
-    await file.seek(0)
-    reader.close()
+    with PdfReader(data.file) as reader:
+        total_pages = len(reader.pages)
+
+    await data.seek(0)
+
+    id = uuid4()
 
     if total_pages <= CHUNK_SIZE:
-        id = await upload_single_chunk_pdf(file)
-        return id
-
-    id = await upload_multiple_chunk_pdf(file, total_pages)
-    return id
-
-
-async def upload_single_chunk_pdf(file: UploadFile) -> UUID:
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="Arquivo sem nome.")
-
-    id = uuid4()
-
-    target_path = STATIC_PATH / str(id)
-    file_path = target_path / file.filename
-
-    target_path.mkdir(parents=True)
-
-    with file_path.open("w") as f:
-        shutil.copyfileobj(file.file, f.buffer)
+        store_file(data.file, data.filename, id)
+    else:
+        for idx, chunk in enumerate(get_chunks(data.file)):
+            store_file(chunk, data.filename, id, idx + 1)
+            chunk.close()
 
     return id
 
 
-async def upload_multiple_chunk_pdf(file: UploadFile, total_pages: int) -> UUID:
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="Arquivo sem nome.")
-
-    reader = PdfReader(file.file)
-
-    id = uuid4()
-
-    target_path = STATIC_PATH / str(id)
-    target_path.mkdir(parents=True)
+def get_chunks(original_file: BinaryIO) -> Generator[io.BytesIO, None, None]:
+    reader = PdfReader(original_file)
+    total_pages = len(reader.pages)
 
     for i in range(0, total_pages, CHUNK_SIZE):
         writer = PdfWriter()
 
-        for page_num in range(i, min(i + CHUNK_SIZE, total_pages)):
+        last_page = min(i + CHUNK_SIZE, total_pages)
+
+        for page_num in range(i, last_page):
             writer.add_page(reader.pages[page_num])
 
-        chunk = i // CHUNK_SIZE + 1
-        extension = "pdf"
+        stream = io.BytesIO()
+        writer.write(stream)
 
-        output_filename = (
-            f"{''.join(file.filename.split('.')[:-1])}_{chunk}.{extension}"
-        )
+        stream.seek(0)
 
-        file_path = target_path / output_filename
+        yield stream
 
-        with file_path.open("wb") as f:
-            writer.write(f)
 
-    return id
+def store_file(
+    file: BinaryIO, filename: str, id: UUID, chunk_number: int | None = None
+):
+    file_name = get_filename(filename, chunk_number)
+
+    target_path = STATIC_PATH / str(id)
+    file_path = target_path / file_name
+
+    target_path.mkdir(parents=True, exist_ok=True)
+
+    with file_path.open("wb") as f:
+        shutil.copyfileobj(file, f)
+
+
+def get_filename(filename: str, chunk_number: int | None) -> str:
+    if chunk_number is None:
+        return filename
+
+    path = Path(filename)
+
+    return f"{path.stem}_{chunk_number}.{path.suffix}"
