@@ -15,8 +15,8 @@ def ping():
 
 
 @router.get("/arquivo/{id}")
-def get_arquivo(id: UUID):
-    path = services.file.get(id)
+def get_arquivo(id: UUID, chunk: int = 1):
+    path = services.file.get(id, chunk)
 
     return RedirectResponse(str(path))
 

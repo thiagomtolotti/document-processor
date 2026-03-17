@@ -17,7 +17,17 @@ class FileNotFoundException(HTTPException):
         super().__init__(status_code=404, detail="Arquivo não encontrado")
 
 
-def get(id: UUID) -> str:
+class InvalidChunkException(HTTPException):
+    def __init__(self):
+        super().__init__(status_code=422, detail="Chunk inválido")
+
+
+def get(id: UUID, chunk: int = 1) -> str:
+    chunk_index = chunk - 1
+
+    if chunk_index < 0:
+        raise InvalidChunkException
+
     target_path = STATIC_PATH / str(id)
 
     if not target_path.is_dir():
@@ -25,17 +35,18 @@ def get(id: UUID) -> str:
 
     files = [f for f in target_path.iterdir() if f.is_file()]
 
-    match len(files):
-        case 0:
-            raise FileNotFoundException
-        case 1:
-            web_path = Path("static") / str(id) / files[0].name
+    total_files = len(files)
 
-            return f"/{web_path.as_posix()}"
-        case _:
-            raise HTTPException(
-                status_code=422, detail="Múltiplos arquivos encontrados."
-            )
+    if total_files == 0:
+        raise FileNotFoundException
+
+    if chunk_index >= total_files:
+        raise InvalidChunkException
+
+    target = files[chunk - 1]
+    web_path = Path("static") / str(id) / target.name
+
+    return f"/{web_path.as_posix()}"
 
 
 async def upload(data: UploadFile) -> UUID:
