@@ -2,6 +2,7 @@ import shutil
 
 from uuid import UUID, uuid4
 from fastapi.datastructures import UploadFile
+from fastapi.exceptions import HTTPException
 
 from app.constants import STATIC_PATH
 
@@ -10,9 +11,9 @@ def get(id: UUID) -> None:
     return None
 
 
-async def upload(file: UploadFile):
+async def upload(file: UploadFile) -> UUID | None:
     if not file.filename:
-        return
+        raise HTTPException(status_code=400, detail="No ")
 
     id = uuid4()
 
@@ -23,3 +24,5 @@ async def upload(file: UploadFile):
 
     with file_path.open("w") as f:
         shutil.copyfileobj(file.file, f.buffer)
+
+    return id
