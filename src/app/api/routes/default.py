@@ -1,7 +1,8 @@
 from uuid import UUID
 
+from fastapi import UploadFile
 from fastapi.routing import APIRouter
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 
 from app import services
 
@@ -14,9 +15,16 @@ def ping():
 
 
 @router.get("/arquivo/{id}")
-def get_arquivo(id: UUID, response: FileResponse):
+def get_arquivo(id: UUID, response: Response):
     file = services.file.get(id)
 
     if file is None:
         response.status_code = 404
         return {"message": "Arquivo não encontrado"}
+
+
+@router.post("/arquivo")
+def upload_arquivo(file: UploadFile, response: Response):
+    services.file.upload(file)
+
+    return {"message": "O upload foi bem sucedido"}
