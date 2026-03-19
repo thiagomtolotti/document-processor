@@ -23,6 +23,6 @@ def get_arquivo(id: UUID, chunk: int = 1):
 
 @router.post("/arquivo")
 async def upload_arquivo(file: UploadFile):
-    id = await services.file.upload(file)
+    id = services.file.upload(file)
 
     return {"message": "O upload foi bem sucedido", "id": str(id)}

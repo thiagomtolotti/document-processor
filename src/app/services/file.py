@@ -1,3 +1,4 @@
+from abc import ABC
 import shutil
 import io
 
@@ -49,65 +50,87 @@ def get(id: UUID, chunk: int = 1) -> str:
     return f"/{web_path.as_posix()}"
 
 
-async def upload(data: UploadFile) -> UUID:
+# TODO: handle files asynchronously
+def upload(data: UploadFile) -> UUID:
     if not data.filename:
         raise HTTPException(status_code=400, detail="Arquivo sem nome.")
 
-    with PdfReader(data.file) as reader:
-        total_pages = len(reader.pages)
+    Strategy = get_file_strategy(data.filename)
 
-    await data.seek(0)
+    strategy = Strategy(data.filename, data.file)
 
-    id = uuid4()
-
-    if total_pages <= CHUNK_SIZE:
-        store_file(data.file, data.filename, id)
-    else:
-        for idx, chunk in enumerate(get_chunks(data.file)):
-            store_file(chunk, data.filename, id, idx + 1)
-            chunk.close()
-
-    return id
+    return strategy.id
 
 
-def get_chunks(original_file: BinaryIO) -> Generator[io.BytesIO, None, None]:
-    reader = PdfReader(original_file)
-    total_pages = len(reader.pages)
-
-    for i in range(0, total_pages, CHUNK_SIZE):
-        writer = PdfWriter()
-
-        last_page = min(i + CHUNK_SIZE, total_pages)
-
-        for page_num in range(i, last_page):
-            writer.add_page(reader.pages[page_num])
-
-        stream = io.BytesIO()
-        writer.write(stream)
-
-        stream.seek(0)
-
-        yield stream
-
-
-def store_file(
-    file: BinaryIO, filename: str, id: UUID, chunk_number: int | None = None
-):
-    file_name = get_filename(filename, chunk_number)
-
-    target_path = STATIC_PATH / str(id)
-    file_path = target_path / file_name
-
-    target_path.mkdir(parents=True, exist_ok=True)
+# TODO: handle errors (disk full, permissions)
+def store_binary(file: BinaryIO, directory: Path, filename: str):
+    file_path = directory / filename
 
     with file_path.open("wb") as f:
         shutil.copyfileobj(file, f)
 
 
-def get_filename(filename: str, chunk_number: int | None) -> str:
-    if chunk_number is None:
-        return filename
+class FileStrategy(ABC):
+    def __init__(self, filename: str, file: BinaryIO) -> None:
+        super().__init__()
 
-    path = Path(filename)
+        self.id = uuid4()
+        self.filename = filename
 
-    return f"{path.stem}_{chunk_number}.{path.suffix}"
+        chunks = list(self._get_chunks(file))
+
+        path = STATIC_PATH / str(self.id)
+
+        path.mkdir(parents=True, exist_ok=True)
+
+        for index, chunk in enumerate(chunks, start=1):
+            store_binary(
+                chunk, path, self._get_chunk_filename(index, total=len(chunks))
+            )
+            chunk.close()
+
+    def _get_chunks(self, file: BinaryIO) -> Generator[io.BytesIO, None, None]:
+        yield io.BytesIO(file.read())
+
+    def _get_chunk_filename(self, chunk_number: int, total: int) -> str:
+        if total == 1:
+            return self.filename
+
+        directory = Path(self.filename)
+
+        return f"{directory.stem}_{chunk_number}{directory.suffix}"
+
+
+class PdfStrategy(FileStrategy):
+    def _get_chunks(self, file: BinaryIO) -> Generator[io.BytesIO, None, None]:
+        # TODO: validate that the file is readable before reading
+
+        reader = PdfReader(file)
+        total_pages = len(reader.pages)
+
+        for i in range(0, total_pages, CHUNK_SIZE):
+            writer = PdfWriter()
+
+            last_page = min(i + CHUNK_SIZE, total_pages)
+
+            for page_num in range(i, last_page):
+                writer.add_page(reader.pages[page_num])
+
+            stream = io.BytesIO()
+            writer.write(stream)
+
+            stream.seek(0)
+
+            yield stream
+
+
+class DefaultStrategy(FileStrategy):
+    pass
+
+
+def get_file_strategy(filename: str) -> type[FileStrategy]:
+    ext = Path(filename).suffix.lower()
+
+    strategies = {".pdf": PdfStrategy}
+
+    return strategies.get(ext, DefaultStrategy)
