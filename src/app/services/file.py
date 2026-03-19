@@ -1,4 +1,5 @@
 from abc import ABC
+import logging
 import shutil
 import io
 
@@ -6,8 +7,10 @@ from pathlib import Path
 from fastapi.datastructures import UploadFile
 from fastapi.exceptions import HTTPException
 from pypdf import PdfReader, PdfWriter
+from pypdf._page import PageObject
+from pypdf.generic import ArrayObject, NameObject
 
-from typing import BinaryIO, Generator
+from typing import Any, BinaryIO, Generator
 from uuid import UUID, uuid4
 
 from app.constants import CHUNK_SIZE, STATIC_PATH
@@ -107,8 +110,12 @@ class PdfStrategy(FileStrategy):
     def _get_chunks(self, file: BinaryIO) -> Generator[io.BytesIO, None, None]:
         # TODO: validate that the file is readable before reading
 
+        logging.info("READING PDF FILE")
+
         reader = PdfReader(file)
         total_pages = len(reader.pages)
+
+        logging.info("READ PDF FILE WITH %d PAGES", total_pages)
 
         for i in range(0, total_pages, CHUNK_SIZE):
             writer = PdfWriter()
@@ -123,14 +130,62 @@ class PdfStrategy(FileStrategy):
             )
 
             for page_num in range(i, last_page):
-                writer.add_page(reader.pages[page_num])
+                page = reader.pages[page_num]
+
+                self._remove_page_references(page)
+
+                writer.add_page(page)
 
             stream = io.BytesIO()
+            logging.info("WRITING CHUNK TO STREAM")
+            # TODO: this is taking too long
             writer.write(stream)
+            logging.info("WROTE CHUNK TO STREAM")
 
             stream.seek(0)
 
             yield stream
+
+            logging.info(
+                "READ PAGES %d TO %d",
+                i + 1,
+                last_page,
+            )
+
+    def _remove_page_references(self, page: PageObject):
+        if not page.get("/Annots"):
+            return
+
+        annots = page["/Annots"].get_object()
+
+        if not isinstance(annots, ArrayObject):
+            return
+
+        new_annots: list[Any] = []
+
+        for annot_ref in annots:
+            annot = (
+                annot_ref.get_object()
+                if hasattr(annot_ref, "get_object")
+                else annot_ref
+            )
+
+            if annot.get("/Subtype") == "/Link":
+                if "/Dest" in annot:
+                    continue
+
+                action = annot.get("/A")
+
+                if action is not None:
+                    if hasattr(action, "get_object"):
+                        action = action.get_object()
+
+                    if action.get("/S") == "/GoTo":
+                        continue
+
+            new_annots.append(annot_ref)
+
+        page[NameObject("/Annots")] = ArrayObject(new_annots)
 
 
 class DefaultStrategy(FileStrategy):
