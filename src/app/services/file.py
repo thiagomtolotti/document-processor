@@ -84,6 +84,8 @@ class FileStrategy(ABC):
         path.mkdir(parents=True, exist_ok=True)
 
         for index, chunk in enumerate(chunks, start=1):
+            logging.info("STORING CHUNK %d OF %d", index, len(chunks))
+
             store_binary(
                 chunk, path, self._get_chunk_filename(index, total=len(chunks))
             )
@@ -112,6 +114,13 @@ class PdfStrategy(FileStrategy):
             writer = PdfWriter()
 
             last_page = min(i + CHUNK_SIZE, total_pages)
+
+            logging.info(
+                "READING PAGES %d TO %d OF %d",
+                i + 1,
+                last_page,
+                total_pages,
+            )
 
             for page_num in range(i, last_page):
                 writer.add_page(reader.pages[page_num])

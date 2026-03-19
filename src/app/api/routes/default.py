@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from fastapi import UploadFile
@@ -23,6 +24,8 @@ def get_arquivo(id: UUID, chunk: int = 1):
 
 @router.post("/arquivo")
 async def upload_arquivo(file: UploadFile):
+    logging.info("RECEIVED FILE %s", file.filename)
+
     id = services.file.upload(file)
 
     return {"message": "O upload foi bem sucedido", "id": str(id)}
