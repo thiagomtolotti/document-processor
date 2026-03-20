@@ -1,4 +1,9 @@
-.PHONY: dev
+.PHONY: dev venv
+
+venv:
+	python -m venv .venv
+	.venv/bin/pip install -r requirements.txt || .venv\Scripts\pip install -r requirements.txt
+
 
 dev: 
-	fastapi run src/app/main.py --reload
+	python scripts/dev.py

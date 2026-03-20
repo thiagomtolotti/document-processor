@@ -1,5 +1,5 @@
 from pathlib import Path
 
 
-STATIC_PATH = Path("./src/app/static")
+STATIC_PATH = Path(__file__).parent / "static"
 CHUNK_SIZE = 15
